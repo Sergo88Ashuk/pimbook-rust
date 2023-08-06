@@ -1,3 +1,4 @@
+use num::Num;
 use std::cmp;
 use std::fmt::Write;
 
@@ -10,9 +11,11 @@ where
     T: Copy
         + std::cmp::PartialEq
         + Default
+        + Num
         + std::ops::Add<Output = T>
         + std::ops::Mul<Output = T>
-        + std::ops::AddAssign<<T as std::ops::Mul>::Output>,
+        + std::ops::AddAssign<<T as std::ops::Mul>::Output>
+        + std::ops::Neg<Output = T>,
 {
     pub fn new(mut coefs: Vec<T>) -> Self {
         let coefs_ = coefs.clone();
@@ -20,7 +23,7 @@ where
         let mut cnt = 0;
 
         // count number of zero elements at the end of coefficients vector
-		while c_it.peek().is_some() {
+        while c_it.peek().is_some() {
             if *c_it.next().unwrap() != T::default() {
                 break;
             }
@@ -36,15 +39,41 @@ where
         }
     }
 
-    pub fn interpolate_from(_points: Vec<(T, T)>) -> Self {
-        todo!();
+    fn single_term_poly(points: &[(T, T)], idx: usize) -> Polynomial<T> {
+        let mut term = Polynomial::new(vec![T::one()]);
+        let (xi, yi) = points[idx];
+
+        for (j, p) in points.iter().enumerate() {
+            if j == idx {
+                continue;
+            }
+
+            let xj = p.0;
+            term = term.mul(&Polynomial::new(vec![
+                -xj / (xi - xj),
+                T::one() / (xi - xj),
+            ]));
+        }
+
+        term.mul(&Polynomial::new(vec![yi]))
+    }
+
+    pub fn interpolate_from(points: Vec<(T, T)>) -> Self {
+        // TODO: check points vec not empty
+        // TODO: check points are unique
+        let terms: Vec<Polynomial<T>> = (0..points.len())
+            .map(|idx| Self::single_term_poly(&points, idx))
+            .collect();
+        terms
+            .iter()
+            .fold(Polynomial::new(vec![T::default()]), |acc, x| acc.add(x))
     }
 
     pub fn add(&self, other: &Polynomial<T>) -> Self {
         let max_len = cmp::max(self.coefs_.len(), other.coefs_.len());
         let mut res_coefs = vec![T::default(); max_len];
 
-		for (i, coef) in res_coefs.iter_mut().enumerate() {
+        for (i, coef) in res_coefs.iter_mut().enumerate() {
             let mut rhs = T::default();
             let mut lhs = T::default();
 
@@ -145,6 +174,11 @@ mod tests {
         assert_eq!(poly3, Polynomial::new(vec![1.0, 1.0, 3.0]));
         let poly3 = poly2.add(&poly1);
         assert_eq!(poly3, Polynomial::new(vec![1.0, 1.0, 3.0]));
+
+        let poly1 = Polynomial::new(vec![0]);
+        let poly2 = Polynomial::new(vec![0, 1]);
+        let poly3 = poly1.add(&poly2);
+        assert_eq!(poly3, Polynomial::new(vec![0, 1]));
     }
 
     #[test]
@@ -181,6 +215,14 @@ mod tests {
 
     #[test]
     fn interpolate() {
-        todo!();
+        let pts = vec![(1.0, 325.0), (3.0, 2383.0), (5.0, 6609.0)];
+        let p = Polynomial::interpolate_from(pts);
+        assert_eq!(p, Polynomial::new(vec![109.0, -55.0, 271.0]));
+        assert_eq!(p.eval_at(0.0), 109.0);
+
+        let pts = vec![(2.0, 1083.0), (5.0, 6609.0), (0.0, 533.0)];
+        let p = Polynomial::interpolate_from(pts);
+        println!("{:?}", p);
+        assert_eq!(p.eval_at(0.0), 533.0);
     }
 }
